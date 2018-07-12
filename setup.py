@@ -8,10 +8,9 @@
 """`tornado-routes` lives on `GitHub <https://github.com/troolee/tornado-routes>`_."""
 from setuptools import setup
 
-
 setup(
     name="tornado-routes",
-    version="0.0.3",
+    version="0.0.4",
     author="Pavel Reznikov",
     author_email="pashka.reznikov@gmail.com",
     description="URL routings for tornado web server",
@@ -22,7 +21,7 @@ setup(
     license="MIT",
     keywords="routes tornado tornadoweb routings",
     url="https://github.com/troolee/tornado-routes",
-    py_modules=['tornado_routes'],
+    py_modules=['tornado_routes', 'route_parser'],
     long_description=__doc__,
     install_requires=['tornado', 'six'],
 )

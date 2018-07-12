@@ -8,24 +8,75 @@
 
 from pprint import pformat
 import operator
-import re
 from tornado import web
 from tornado.web import URLSpec
 import logging
 import six
 
+from route_parser import Parser
 
 logger = logging.getLogger(__name__)
 
+__ALL__ = ('make_handlers', 'include', 'route', 'routes',)
 
-__ALL__ = ('make_handlers', 'include', 'route', 'routes', )
-
-
-def handler_repr(cls):
-    return re.search("'(.+)'", repr(cls)).groups()[0]
+route_classes = {}
 
 
-class HandlersList(object):
+def route(path, params=None, name=None):
+    params = params or {}
+
+    def decorator(cls):
+        if repr(cls) in route_classes:
+            raise Exception('Cannot bind route "{}" to %s. It already has route to "{}".'
+                            .format(path, cls, route_classes[repr(cls)]))
+        route_classes[repr(cls)] = path
+        cls.route_path = path
+        cls.route_params = params
+        url_name = params.pop('url_name', name)
+        cls.url_name = url_name
+        return cls
+
+    return decorator
+
+
+def routes(*routes):
+    def decorator(cls):
+        cls.routes = routes
+        return cls
+
+    return decorator
+
+
+def include(module):
+    def load_module(m):
+        m = m.split('.')
+        ms, m = '.'.join(m), m[-1]
+        m = __import__(ms, fromlist=[m], level=0)
+        return m
+
+    if isinstance(module, six.string_types):
+        module = load_module(module)
+
+    p = Parser()
+
+    def parse(member, routes):
+        func_dict = {
+            'routes': p.parse_routes,
+            'route_path': p.parse_route_path,
+            'rest_route_path': p.parse_rest_route_path,
+        }
+        for key in func_dict.keys():
+            func_dict.get(key)(member, key, routes)
+
+    routes = []
+    for member in dir(module):
+        member = getattr(module, member)
+        if isinstance(member, type) and issubclass(member, web.RequestHandler):
+            parse(member, routes)
+    return Handlers(None, routes)
+
+
+class Handlers(object):
 
     def __init__(self, prefix, items):
         self.prefix = prefix
@@ -43,17 +94,20 @@ class HandlersList(object):
             name = r[2].pop('url_name')
         if name:
             return name
-        return handler_repr(handler)
+        return Parser().handler_repr(handler)
 
     def build(self, prefix=None):
         prefix = prefix or self.prefix or ''
 
         res = []
         for r in self.items:
-            route = '/' + '/'.join([prefix.strip('/')] + r[0].strip('/').split('/')).strip('/')
+            if len(r) != 2:
+                raise Exception('Url item must be typle which length is 2. Invalid item is {}'.format(r))
 
-            if isinstance(r[1], HandlersList):
-                res += r[1].build(route)
+            ro = '/' + '/'.join([prefix.strip('/')] + r[0].strip('/').split('/')).strip('/')
+
+            if isinstance(r[1], Handlers):
+                res += r[1].build(ro)
             elif isinstance(r[1], six.string_types):
                 m = r[1].split('.')
                 ms, m, h = '.'.join(m[:-1]), m[-2], m[-1]
@@ -61,91 +115,20 @@ class HandlersList(object):
                 handler = getattr(m, h)[0]
                 d = {'name': self.get_handler_name(handler, r)}
                 d.update(r[2:])
-                res.append(URLSpec(route, handler, **d))
+                res.append(URLSpec(ro, handler, **d))
             else:
                 handler = r[1:][0]
                 d = {'name': self.get_handler_name(handler, r)}
                 if len(r) == 3:
                     d['kwargs'] = r[2]
-                res.append(URLSpec(route, handler, **d))
+                res.append(URLSpec(ro, handler, **d))
 
         return res
 
+    def make_handlers(self):
+        res = tuple(self.build())
 
-def make_handlers(prefix, *args):
-    res = tuple(HandlersList(prefix, args).build())
+        rr = [(x.regex.pattern, x.handler_class, x.kwargs, x.name) for x in res]
+        logger.debug('\n' + pformat(sorted(rr, key=operator.itemgetter(0)), width=200))
 
-    rr = [(x.regex.pattern, x.handler_class, x.kwargs, x.name) for x in res]
-    logger.debug('\n' + pformat(sorted(rr, key=operator.itemgetter(0)), width=200))
-
-    return res
-
-
-def include(module):
-    def load_module(m):
-        m = m.split('.')
-        ms, m = '.'.join(m), m[-1]
-        m = __import__(ms, fromlist=[m], level=0)
-        return m
-
-    if isinstance(module, six.string_types):
-        module = load_module(module)
-
-    routes = []
-    for member in dir(module):
-        member = getattr(module, member)
-        if isinstance(member, type) and issubclass(member, web.RequestHandler) and hasattr(member, 'routes'):
-            i = 1
-            for route_path, route_params in member.routes:
-                route_path.strip('/')
-                if not route_params:
-                    route_params = {}
-                if 'url_name' not in route_params:
-                    route_params['url_name'] = '%s~%d' % (handler_repr(member), i)
-                routes.append((route_path, member, route_params))
-                i += 1
-        elif isinstance(member, type) and issubclass(member, web.RequestHandler) and hasattr(member, 'route_path'):
-            route_path, route_params = member.route_path, member.route_params
-
-            route_path.strip('/')
-            if route_params:
-                routes.append((route_path, member, route_params))
-            else:
-                routes.append((route_path, member))
-        elif isinstance(member, type) and issubclass(member, web.RequestHandler) and hasattr(member, 'rest_route_path'):
-            route_path, route_params = member.rest_route_path, member.route_params
-
-            route_path.strip('/')
-            if route_params:
-                routes.append((route_path, member, route_params))
-                routes.append((route_path + r'/([0-9]+)', member, route_params))
-            else:
-                routes.append((route_path, member))
-                routes.append((route_path + r'/([0-9]+)', member))
-    return HandlersList(None, routes)
-
-
-route_classes = {}
-
-
-def route(path, params=None, name=None):
-    params = params or {}
-
-    def decorator(cls):
-        if repr(cls) in route_classes:
-            raise Exception('Cannot bind route "%s" to %s. It already has route to "%s".' %
-                            (path, cls, route_classes[repr(cls)]))
-        route_classes[repr(cls)] = path
-        cls.route_path = path
-        cls.route_params = params
-        url_name = params.pop('url_name', name)
-        cls.url_name = url_name
-        return cls
-    return decorator
-
-
-def routes(*routes):
-    def decorator(cls):
-        cls.routes = routes
-        return cls
-    return decorator
+        return res

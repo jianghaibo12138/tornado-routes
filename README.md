@@ -10,7 +10,7 @@ from tornado import web
 from tornado_routes import Handlers, include
 
 
-URL_PREFIX = ''
+url_prefix = ''
 
 urls = [
     (r'/user', include('api.user.UserController'))
@@ -51,7 +51,7 @@ class IndexHandler(web.RequestHandler):
 
 Your could use view names in your templates:
 
-```html
-<a href="{{ reverse_url('index') }}">Index</a>
-<a href="{{ reverse_url('api.FooHandler') }}">Foo link</a>
+```bash
+
+curl http://localhost:8888/foo # "foo" instance
 ```

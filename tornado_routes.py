@@ -5,6 +5,10 @@
 # Created: 23/01/13
 #
 # Id: $Id$
+#
+# Contributor: jianghaibo <loserj@sina.com>
+#
+# Updated: 12/07/18
 
 from pprint import pformat
 import operator

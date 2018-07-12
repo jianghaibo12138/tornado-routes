@@ -7,16 +7,24 @@ Usage examples:
 
 ```python
 from tornado import web
-from tornado_routes import make_handlers
+from tornado_routes import Handlers, include
 
 
 URL_PREFIX = ''
 
-app = web.Application(make_handlers(URL_PREFIX,
-    (r'/(robots\.txt|favicon\.ico)', web.StaticFileHandler, {"path": os.path.join(ROOT, 'static')}),
-    (r'/api', include('api')),
-    (r'/', include('views')),
-))
+urls = [
+    (r'/user', include('api.user.UserController'))
+]
+
+handle = Handlers(url_prefix, urls)
+
+def make_app():
+    return web.Application(handlers=handle.make_handlers())
+
+if __name__ == '__main__':
+    make_app().listen(8888)
+    print("Server starts on the port {}".format(8888))
+    ioloop.IOLoop.current().start()
 ```
 
 `api.py`:

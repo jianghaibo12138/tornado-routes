@@ -55,3 +55,7 @@ Your could use view names in your templates:
 
 curl http://localhost:8888/foo # "foo" instance
 ```
+
+### Thanks ###
+
+- thanks for [troolee](http://www.google.com/) and his project [tornado-routes](https://github.com/troolee/tornado-routes)
